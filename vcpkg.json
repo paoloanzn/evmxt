@@ -1,8 +1,9 @@
 {
   "dependencies": [
+    "cjson",
     "curl",
     "lua",
     "secp256k1",
-    "cjson"
+    "openssl"
   ]
 }

@@ -19,6 +19,18 @@ static inline uint64_t bytes_to_uint64(const uint8_t *bytes, size_t len)
     return value;
 }
 
+static inline void bytes32_to_hex(const uint8_t bytes[32], char out[65])
+{
+    static const char hex[] = "0123456789abcdef";
+
+    for (size_t i = 0; i < 32; ++i) {
+        out[i * 2]     = hex[bytes[i] >> 4];
+        out[i * 2 + 1] = hex[bytes[i] & 0x0f];
+    }
+
+    out[64] = '\0';
+}
+
 int main() {
 	lua_State *L = luaL_newstate();
 	luaL_openlibs(L);
@@ -69,7 +81,7 @@ int main() {
 		return 1;
 	}
 	printf("chain_id = %s = %lu\n", chain_id, bytes_to_uint64(decode_buf, n));
-	
+
 	lua_pop(L, 2);
 	lua_close(L);
 	return 0;
