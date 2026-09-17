@@ -1,4 +1,5 @@
 #include <secp256k1.h>
+#include <secp256k1_recovery.h>
 #include <stddef.h>
 #include <openssl/evp.h>
 #include <stdint.h>
@@ -29,7 +30,7 @@ int eth_keccak256(
     return out_len == 32;
 }
 
-int derive_address(const uint8_t *private_key, uint8_t *address_out) 
+int derive_address(const uint8_t private_key[32], uint8_t address_out[20])
 {
     secp256k1_context *ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
     secp256k1_pubkey public_key;
@@ -57,18 +58,23 @@ int derive_address(const uint8_t *private_key, uint8_t *address_out)
     return 0;
 }
 
-int sign_hash(const uint8_t *private_key, const uint8_t *hash, uint8_t *result, uint8_t *s, int *v)
+int sign_hash(const uint8_t private_key[32], const uint8_t hash[32],
+              uint8_t result[32], uint8_t s[32], int *v)
 {
     secp256k1_context *ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
-    secp256k1_ecdsa_signature sig;
-    if (!secp256k1_ecdsa_sign(ctx, &sig, hash, private_key, NULL, NULL)) {
+    secp256k1_ecdsa_recoverable_signature sig;
+    if (!secp256k1_ecdsa_sign_recoverable(ctx, &sig, hash, private_key, NULL, NULL)) {
         secp256k1_context_destroy(ctx);
         return -1;
     }
 
     uint8_t sig_out[64];
     int recid;
-    secp256k1_ecdsa_signature_serialize_compact(ctx, sig_out, &sig);
+    secp256k1_ecdsa_recoverable_signature_serialize_compact(ctx, sig_out, &recid, &sig);
+    if (recid > 1) {
+        secp256k1_context_destroy(ctx);
+        return -1;
+    }
     memcpy(result, sig_out, 32);
     memcpy(s, sig_out + 32, 32);
     *v = recid;
