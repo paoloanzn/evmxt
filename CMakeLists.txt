@@ -6,6 +6,7 @@ project(evmxt LANGUAGES C)
 add_executable(evmxt main.c
     engine.c
     hex.c
+    rlp.c
     eth_crypto.c
     selector.c)
 
