@@ -4,9 +4,11 @@
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
+#include <stdlib.h>
 
 #include "engine.h"
 #include "hex.h"
+#include "selector.h"
 
 static inline uint64_t bytes_to_uint64(const uint8_t *bytes, size_t len)
 {
@@ -82,6 +84,14 @@ int main() {
 	}
 	printf("chain_id = %s = %lu\n", chain_id, bytes_to_uint64(decode_buf, n));
 
+	uint8_t selector[4];
+	char hex_encoded_selector[11];
+	compute_selector("approve(address,uint256)", 
+		selector);
+	hex_encode(selector, 4, hex_encoded_selector);
+	printf("Selector: %s\n", hex_encoded_selector);
+
+	free(chain_id);
 	lua_pop(L, 2);
 	lua_close(L);
 	return 0;

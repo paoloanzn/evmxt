@@ -6,7 +6,8 @@ project(evmxt LANGUAGES C)
 add_executable(evmxt main.c
     engine.c
     hex.c
-    eth_crypto.c)
+    eth_crypto.c
+    selector.c)
 
 find_package(unofficial-lua CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
