@@ -6,7 +6,7 @@
 #include <lauxlib.h>
 #include <stdlib.h>
 
-#include "engine.h"
+#include "rpc.h"
 #include "eth_crypto.h"
 #include "hex.h"
 #include "selector.h"

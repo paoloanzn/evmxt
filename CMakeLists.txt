@@ -4,7 +4,7 @@ project(evmxt LANGUAGES C)
 
 
 add_executable(evmxt main.c
-    engine.c
+    rpc.c
     hex.c
     eip_1559_tx.c
     rlp.c

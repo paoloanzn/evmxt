@@ -4,7 +4,7 @@
 #include <curl/curl.h>
 #include <cjson/cJSON.h>
 
-#include "engine.h"
+#include "rpc.h"
 
 #define BODY_BUF_SIZE 512
 
