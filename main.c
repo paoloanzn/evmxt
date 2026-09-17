@@ -38,7 +38,7 @@ int main() {
 	lua_State *L = luaL_newstate();
 	luaL_openlibs(L);
 
-	if (luaL_loadfile(L, "config.lua") || lua_pcall(L, 0, 0, 0)) {
+	if (luaL_loadfile(L, "configuration/config.lua") || lua_pcall(L, 0, 0, 0)) {
 		printf("Some errors were found: %s\n",
 			lua_tostring(L, -1));
 			lua_close(L);
@@ -46,7 +46,7 @@ int main() {
 	}
 	// lua_stack = []
 
-	lua_getglobal(L, "config");
+	lua_getglobal(L, "global_config");
 	if (!lua_istable(L, -1)) {
 		printf("config is not a table\n");
 		lua_pop(L, 1);
