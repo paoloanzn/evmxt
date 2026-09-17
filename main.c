@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include "engine.h"
+#include "eth_crypto.h"
 #include "hex.h"
 #include "selector.h"
 
@@ -91,9 +92,38 @@ int main() {
 	hex_encode(selector, 4, hex_encoded_selector);
 	printf("Selector: %s\n", hex_encoded_selector);
 
+	uint8_t private_key[32];
+	n = hex_decode(
+		// well known "public" private key used for testing.
+		"ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+		private_key, 32
+	);
+	uint8_t address[20];
+	if (n != sizeof(private_key) || derive_address(private_key, address) != 0) {
+		fprintf(stderr, "Error deriving address\n");
+		free(chain_id);
+		lua_pop(L, 2);
+		lua_close(L);
+		return 1;
+	}
+	char address_hex_encoded[44];
+	hex_encode(address, 20, address_hex_encoded);
+	printf("address: %s\n", address_hex_encoded);
+
+	// Example hashed tx: 0x000....1
+	uint8_t hash[32] = {0};
+	hash[31] = 1;
+	uint8_t result[32], s[32];
+	int v;
+	sign_hash(private_key, hash, result, s, &v);
+	printf("v: %d\n", v);
+	char result_hex_encoded[68];
+	hex_encode(result, 32, result_hex_encoded);
+	printf("result: %s\n", result_hex_encoded);
+
+
 	free(chain_id);
 	lua_pop(L, 2);
 	lua_close(L);
 	return 0;
 }
-

@@ -1,6 +1,9 @@
+#include <secp256k1.h>
 #include <stddef.h>
 #include <openssl/evp.h>
 #include <stdint.h>
+#include <string.h>
+#include <time.h>
 
 #include "eth_crypto.h"
 
@@ -24,4 +27,52 @@ int eth_keccak256(
     }
 
     return out_len == 32;
+}
+
+int derive_address(const uint8_t *private_key, uint8_t *address_out) 
+{
+    secp256k1_context *ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
+    secp256k1_pubkey public_key;
+    if (!secp256k1_ec_pubkey_create(ctx, &public_key, private_key)) {
+        secp256k1_context_destroy(ctx);
+        return -1;
+    }
+    uint8_t pub_serialized[65];
+    size_t pub_len = 65;
+    if (!secp256k1_ec_pubkey_serialize(ctx, pub_serialized, &pub_len, &public_key,
+            SECP256K1_EC_UNCOMPRESSED)) {
+        secp256k1_context_destroy(ctx);
+        return -1;
+    }
+    
+    uint8_t hash[32];
+    if (!eth_keccak256(pub_serialized + 1, 64, hash)) {
+        secp256k1_context_destroy(ctx);
+        return -1;
+    }
+    // The address is the last 20 bytes of the hashed public key.
+    memcpy(address_out, hash + 12, 20);
+
+    secp256k1_context_destroy(ctx);
+    return 0;
+}
+
+int sign_hash(const uint8_t *private_key, const uint8_t *hash, uint8_t *result, uint8_t *s, int *v)
+{
+    secp256k1_context *ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
+    secp256k1_ecdsa_signature sig;
+    if (!secp256k1_ecdsa_sign(ctx, &sig, hash, private_key, NULL, NULL)) {
+        secp256k1_context_destroy(ctx);
+        return -1;
+    }
+
+    uint8_t sig_out[64];
+    int recid;
+    secp256k1_ecdsa_signature_serialize_compact(ctx, sig_out, &sig);
+    memcpy(result, sig_out, 32);
+    memcpy(s, sig_out + 32, 32);
+    *v = recid;
+
+    secp256k1_context_destroy(ctx);
+    return 0;
 }
