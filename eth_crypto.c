@@ -2,6 +2,8 @@
 #include <secp256k1_recovery.h>
 #include <stddef.h>
 #include <openssl/evp.h>
+#include <openssl/crypto.h>
+#include <openssl/rand.h>
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
@@ -56,6 +58,37 @@ int derive_address(const uint8_t private_key[32], uint8_t address_out[20])
 
     secp256k1_context_destroy(ctx);
     return 0;
+}
+
+int generate_eth_wallet(uint8_t private_key_out[32], uint8_t public_key_out[64],
+                        uint8_t address_out[20])
+{
+    if (!private_key_out || !public_key_out || !address_out)
+        return -1;
+    secp256k1_context *ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
+    if (!ctx)
+        return -1;
+    uint8_t private_key[32], serialized[65], hash[32];
+    secp256k1_pubkey public_key;
+    size_t public_key_len = sizeof(serialized);
+    int result = -1;
+    do {
+        if (RAND_priv_bytes(private_key, sizeof(private_key)) != 1)
+            goto cleanup;
+    } while (!secp256k1_ec_seckey_verify(ctx, private_key));
+    if (!secp256k1_ec_pubkey_create(ctx, &public_key, private_key) ||
+        !secp256k1_ec_pubkey_serialize(ctx, serialized, &public_key_len,
+                                     &public_key, SECP256K1_EC_UNCOMPRESSED) ||
+        !eth_keccak256(serialized + 1, 64, hash))
+        goto cleanup;
+    memcpy(private_key_out, private_key, 32);
+    memcpy(public_key_out, serialized + 1, 64);
+    memcpy(address_out, hash + 12, 20);
+    result = 0;
+cleanup:
+    OPENSSL_cleanse(private_key, sizeof(private_key));
+    secp256k1_context_destroy(ctx);
+    return result;
 }
 
 int sign_hash(const uint8_t private_key[32], const uint8_t hash[32],
