@@ -20,6 +20,13 @@ typedef struct {
     bool is_dynamic;
 } abi_layout;
 
+typedef struct {
+    const abi_value *arguments;
+    size_t argument_count;
+    size_t selector_size;
+    size_t total_size;
+} abi_root_layout;
+
 static abi_value make_invalid_value(void)
 {
     // Kind zero is invalid, so constructor errors are reported during encoding.
@@ -64,6 +71,19 @@ abi_value abi_word(const uint8_t word[32])
     }
 
     memcpy(value.as.word, word, 32);
+    return value;
+}
+
+abi_value abi_selector(const uint8_t selector[4])
+{
+    abi_value value = {0};
+
+    if (selector == NULL) {
+        return value;
+    }
+
+    value.kind = ABI_VALUE_SELECTOR;
+    memcpy(value.as.selector, selector, 4);
     return value;
 }
 
@@ -307,6 +327,10 @@ static abi_status inspect_value(
     }
 
     switch (value->kind) {
+    case ABI_VALUE_SELECTOR:
+        // Selectors are calldata framing and are only valid at root index zero.
+        return ABI_INVALID_ARGUMENT;
+
     case ABI_VALUE_WORD:
         layout->encoded_size = 32;
         layout->is_dynamic = false;
@@ -413,6 +437,44 @@ static abi_status inspect_value(
     }
 }
 
+static abi_status inspect_root(
+    const abi_value *values,
+    size_t count,
+    abi_root_layout *root)
+{
+    if (count != 0 && values == NULL) {
+        return ABI_INVALID_ARGUMENT;
+    }
+
+    bool has_selector =
+        count != 0 && values[0].kind == ABI_VALUE_SELECTOR;
+
+    root->selector_size = has_selector ? 4u : 0u;
+    root->arguments = has_selector ? values + 1 : values;
+    root->argument_count = count - (has_selector ? 1u : 0u);
+
+    abi_layout arguments;
+    abi_status status = inspect_sequence(
+        root->arguments,
+        root->argument_count,
+        0,
+        true,
+        &arguments);
+
+    if (status != ABI_OK) {
+        return status;
+    }
+
+    if (size_add_overflows(
+            arguments.encoded_size,
+            root->selector_size,
+            &root->total_size)) {
+        return ABI_OVERFLOW;
+    }
+
+    return ABI_OK;
+}
+
 static void write_size_word(uint8_t out[32], size_t number)
 {
     // The output is already zeroed, so only native size_t bytes can be nonzero.
@@ -505,77 +567,39 @@ static void write_value(
     }
 }
 
+static void write_root(
+    const abi_value *values,
+    const abi_root_layout *root,
+    uint8_t *out)
+{
+    if (root->selector_size != 0) {
+        memcpy(out, values[0].as.selector, 4);
+    }
+
+    // Argument offsets begin after the selector, not at the start of calldata.
+    write_sequence(
+        root->arguments,
+        root->argument_count,
+        out + root->selector_size,
+        0);
+}
+
 abi_status abi_encoded_size(
     const abi_value *values,
     size_t count,
     size_t *size)
 {
-    abi_layout root;
-
-    if (size == NULL || (count != 0 && values == NULL)) {
+    if (size == NULL) {
         return ABI_INVALID_ARGUMENT;
     }
 
-    // Function arguments and return values are encoded as one implicit tuple.
-    abi_status status = inspect_sequence(values, count, 0, true, &root);
+    abi_root_layout root;
+    abi_status status = inspect_root(values, count, &root);
     if (status == ABI_OK) {
-        *size = root.encoded_size;
+        *size = root.total_size;
     }
 
     return status;
-}
-
-static abi_status encode_to_buffer(
-    bool prepend_selector,
-    const uint8_t selector[4],
-    const abi_value *values,
-    size_t count,
-    uint8_t *out,
-    size_t capacity,
-    size_t *written)
-{
-    if (prepend_selector && selector == NULL) {
-        return ABI_INVALID_ARGUMENT;
-    }
-
-    size_t arguments_size;
-    abi_status status = abi_encoded_size(values, count, &arguments_size);
-    if (status != ABI_OK) {
-        return status;
-    }
-
-    size_t selector_size = prepend_selector ? 4u : 0u;
-    size_t total_size;
-    if (size_add_overflows(arguments_size, selector_size, &total_size)) {
-        return ABI_OVERFLOW;
-    }
-
-    if (written != NULL) {
-        *written = total_size;
-    }
-
-    if (capacity < total_size) {
-        return ABI_NO_SPACE;
-    }
-
-    if (total_size != 0 && out == NULL) {
-        return ABI_INVALID_ARGUMENT;
-    }
-
-    if (total_size == 0) {
-        return ABI_OK;
-    }
-
-    // One sequential clear supplies integer high bytes and bytes/string padding.
-    memset(out, 0, total_size);
-
-    if (prepend_selector) {
-        memcpy(out, selector, 4);
-    }
-
-    // Selector bytes are not part of the base used by ABI argument offsets.
-    write_sequence(values, count, out + selector_size, 0);
-    return ABI_OK;
 }
 
 abi_status abi_encode(
@@ -585,76 +609,31 @@ abi_status abi_encode(
     size_t capacity,
     size_t *written)
 {
-    return encode_to_buffer(
-        false,
-        NULL,
-        values,
-        count,
-        out,
-        capacity,
-        written);
-}
-
-abi_status abi_encode_call(
-    const uint8_t selector[4],
-    const abi_value *values,
-    size_t count,
-    uint8_t *out,
-    size_t capacity,
-    size_t *written)
-{
-    return encode_to_buffer(
-        true,
-        selector,
-        values,
-        count,
-        out,
-        capacity,
-        written);
-}
-
-static abi_status allocate_and_encode(
-    bool prepend_selector,
-    const uint8_t selector[4],
-    const abi_value *values,
-    size_t count,
-    abi_buffer *out)
-{
-    if (out == NULL || (prepend_selector && selector == NULL)) {
-        return ABI_INVALID_ARGUMENT;
-    }
-
-    out->data = NULL;
-    out->len = 0;
-
-    size_t arguments_size;
-    abi_status status = abi_encoded_size(values, count, &arguments_size);
+    abi_root_layout root;
+    abi_status status = inspect_root(values, count, &root);
     if (status != ABI_OK) {
         return status;
     }
 
-    size_t selector_size = prepend_selector ? 4u : 0u;
-    size_t total_size;
-    if (size_add_overflows(arguments_size, selector_size, &total_size)) {
-        return ABI_OVERFLOW;
+    if (written != NULL) {
+        *written = root.total_size;
     }
 
-    if (total_size == 0) {
+    if (capacity < root.total_size) {
+        return ABI_NO_SPACE;
+    }
+
+    if (root.total_size != 0 && out == NULL) {
+        return ABI_INVALID_ARGUMENT;
+    }
+
+    if (root.total_size == 0) {
         return ABI_OK;
     }
 
-    // This is the encoder's only allocation. calloc also supplies all padding.
-    out->data = calloc(1, total_size);
-    if (out->data == NULL) {
-        return ABI_NO_MEMORY;
-    }
-    out->len = total_size;
-
-    if (prepend_selector) {
-        memcpy(out->data, selector, 4);
-    }
-
-    write_sequence(values, count, out->data + selector_size, 0);
+    // One sequential clear supplies integer high bytes and bytes/string padding.
+    memset(out, 0, root.total_size);
+    write_root(values, &root, out);
     return ABI_OK;
 }
 
@@ -663,16 +642,32 @@ abi_status abi_encode_alloc(
     size_t count,
     abi_buffer *out)
 {
-    return allocate_and_encode(false, NULL, values, count, out);
-}
+    if (out == NULL) {
+        return ABI_INVALID_ARGUMENT;
+    }
 
-abi_status abi_encode_call_alloc(
-    const uint8_t selector[4],
-    const abi_value *values,
-    size_t count,
-    abi_buffer *out)
-{
-    return allocate_and_encode(true, selector, values, count, out);
+    out->data = NULL;
+    out->len = 0;
+
+    abi_root_layout root;
+    abi_status status = inspect_root(values, count, &root);
+    if (status != ABI_OK) {
+        return status;
+    }
+
+    if (root.total_size == 0) {
+        return ABI_OK;
+    }
+
+    // This is the encoder's only allocation. calloc also supplies all padding.
+    out->data = calloc(1, root.total_size);
+    if (out->data == NULL) {
+        return ABI_NO_MEMORY;
+    }
+    out->len = root.total_size;
+
+    write_root(values, &root, out->data);
+    return ABI_OK;
 }
 
 void abi_buffer_free(abi_buffer *buffer)

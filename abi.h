@@ -22,6 +22,7 @@ typedef enum {
 
 typedef enum {
     ABI_VALUE_INVALID = 0,
+    ABI_VALUE_SELECTOR,
     ABI_VALUE_WORD,
     ABI_VALUE_BYTES,
     ABI_VALUE_ARRAY,
@@ -39,6 +40,7 @@ struct abi_value {
     uint8_t flags; // Private to the implementation.
     uint16_t reserved;
     union {
+        uint8_t selector[4];
         uint8_t word[32];
         struct { const void *data; size_t len; } bytes;
         struct { const abi_value *values; size_t count; } list;
@@ -52,6 +54,7 @@ typedef struct { uint8_t *data; size_t len; } abi_buffer;
 // bytes<M> uses fixed_bytes, and contract/enum use address/uint respectively.
 // Invalid widths or NULL inputs produce a descriptor rejected during encoding.
 abi_value abi_word(const uint8_t word[32]);
+abi_value abi_selector(const uint8_t selector[4]);
 abi_value abi_uint64(uint64_t value);
 abi_value abi_int64(int64_t value);
 abi_value abi_uint_be(const void *value, size_t len);
@@ -74,18 +77,15 @@ abi_value abi_fixed_array(const abi_value *values, size_t count);
 abi_value abi_fixed_array_dynamic(const abi_value *values, size_t count);
 abi_value abi_tuple(const abi_value *values, size_t count);
 
-// Root values are encoded as an ABI tuple. Calls prepend selector without shifting offsets.
-// encode writes no heap; *_alloc performs at most one exact-size allocation. Input and caller
-// output storage must not overlap. On ABI_NO_SPACE, written receives the required size.
+// Root values are encoded as an ABI tuple. An optional abi_selector() may appear
+// once at values[0]; it is written before the tuple without shifting ABI offsets.
+// encode writes no heap; encode_alloc performs one exact-size allocation. Input
+// and caller output storage must not overlap. On ABI_NO_SPACE, written receives
+// the required size.
 abi_status abi_encoded_size(const abi_value *values, size_t count, size_t *size);
 abi_status abi_encode(const abi_value *values, size_t count,
                       uint8_t *out, size_t capacity, size_t *written);
-abi_status abi_encode_call(const uint8_t selector[4], const abi_value *values,
-                           size_t count, uint8_t *out, size_t capacity,
-                           size_t *written);
 abi_status abi_encode_alloc(const abi_value *values, size_t count, abi_buffer *out);
-abi_status abi_encode_call_alloc(const uint8_t selector[4], const abi_value *values,
-                                 size_t count, abi_buffer *out);
 void abi_buffer_free(abi_buffer *buffer);
 const char *abi_status_string(abi_status status);
 
