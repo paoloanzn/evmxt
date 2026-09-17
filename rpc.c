@@ -29,6 +29,13 @@ static size_t write_callback(void *ptr, size_t size, size_t nmemb, void *userp)
     return total;
 }
 
+static inline void compose_json_rpc_request(char *buf, size_t len, const char *method, const char *params)
+{
+    snprintf(buf, len, 
+        "{\"jsonrpc\": \"2.0\", \"method\": \"%s\", \
+        \"params\": %s, \"id\": 1}", method, params);
+}
+
 // Sends a JSON-RPC request; return the result string.
 // The caller must free() the returned string.
 char *rpc_call(const char *url, const char *method, const char *params)
@@ -37,9 +44,7 @@ char *rpc_call(const char *url, const char *method, const char *params)
     if (!curl) return NULL;
 
     char body_buf[BODY_BUF_SIZE];
-    snprintf(body_buf, sizeof(body_buf), 
-        "{\"jsonrpc\": \"2.0\", \"method\": \"%s\", \
-        \"params\": %s, \"id\": 1}", method, params);
+    compose_json_rpc_request(body_buf, sizeof(body_buf), method, params);
 
     struct callback_buf buf = {.data = NULL, .len = 0};
     struct curl_slist *headers = NULL;
