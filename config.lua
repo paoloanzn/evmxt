@@ -1,3 +1,3 @@
 config = {
-	rpc_url = "https://mainnet.base.org"
+	rpc_url = "https://cloudflare-eth.com"
 }

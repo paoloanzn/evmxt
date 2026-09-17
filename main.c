@@ -1,10 +1,23 @@
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
 
 #include "engine.h"
+#include "hex.h"
+
+static inline uint64_t bytes_to_uint64(const uint8_t *bytes, size_t len)
+{
+    uint64_t value = 0;
+
+    for (size_t i = 0; i < len; i++) {
+        value = (value << 8) | bytes[i];
+    }
+
+    return value;
+}
 
 int main() {
 	lua_State *L = luaL_newstate();
@@ -47,7 +60,15 @@ int main() {
 		return 1;
 	}
 
-	printf("ChainID for configured RPC = %s\n", chain_id);
+	uint8_t decode_buf[4096];
+	int n = hex_decode(chain_id, decode_buf, sizeof(decode_buf));
+	if (n < 0) {
+		printf("Error decoding chainId %s\n", chain_id);
+		lua_pop(L, 2);
+		lua_close(L);
+		return 1;
+	}
+	printf("chain_id = %s = %lu\n", chain_id, bytes_to_uint64(decode_buf, n));
 	
 	lua_pop(L, 2);
 	lua_close(L);
