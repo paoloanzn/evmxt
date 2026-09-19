@@ -14,10 +14,11 @@
 
 
     Usage: compose a transaction's Call using positional tuple/array values:
-    local Call = require("configuration.call").Call
+    local Call = require("lua-lib.call").Call
     local call = Call.new("batch", {
         { type = "(bool,uint256[])[]", value = { { true, { 1, 2 } }, { false, { 3 } } } }
-    })
+    }, "0x1111111111111111111111111111111111111111")
+    -- Omit the third argument (or pass nil) when no destination is needed.
 ]]--
 
 local M = {}
@@ -29,6 +30,7 @@ local M = {}
 ---@class Call
 ---@field name string
 ---@field params AbiParam[]
+---@field to string|nil Destination address: 0x followed by 40 hex digits (no checksum validation).
 local Call = {}
 Call.__index = Call
 
@@ -92,8 +94,11 @@ end
 -- Runtime validation for Call objects 
 ---@param name string
 ---@param params AbiParam[]
+---@param to? string Destination address: 0x followed by 40 hex digits.
 ---@return Call
-function Call.new(name, params)
+function Call.new(name, params, to)
+    assert(to == nil or (type(to) == "string" and #to == 42 and to:match("^0x[0-9a-fA-F]+$")),
+        "Invalid destination address: expected nil or 0x followed by 40 hex digits")
     assert(type(name) == "string")
     assert(name:match("^[%a_][%w_]*$"), "Invalid function name")
     assert(type(params) == "table", "Parameters must be an array")
@@ -114,7 +119,8 @@ function Call.new(name, params)
 
         return setmetatable({
             name = name,
-            params = params
+            params = params,
+            to = to
         }, Call)
 end
 
