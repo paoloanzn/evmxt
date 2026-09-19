@@ -5,6 +5,57 @@
 #include "runtime.h"
 
 #define PROGRAM_FILEPATH "program.lua"
+#define NEXT() goto *dispatch[*pc++]
+
+typedef enum {
+    OP_CALL = 0,
+    OP_WALLET_CREATE = 1,
+    OP_GET_CHAIN_ID = 2,
+    OP_COUNT = 3,
+    OP_HALT = OP_COUNT, // Internal instruction; never accepted from Lua.
+} op;
+
+
+// Return zero when dispatch fails, so the caller can stop the runtime.
+static int handle_operation(lua_State *co, lua_Integer index)
+{
+    // lua_stack = [yielded operation, index, data]
+    (void)co;
+
+    // GCC/Clang labels-as-values; indices match lua-lib/ops.lua.
+    static void *const dispatch[] = {
+        [OP_CALL] = &&op_call,
+        [OP_WALLET_CREATE] = &&op_wallet_create,
+        [OP_GET_CHAIN_ID] = &&op_get_chain_id,
+        [OP_HALT] = &&op_halt,
+    };
+    if (index < 0 || index >= OP_COUNT) {
+        goto op_invalid;
+    }
+
+    // Each Lua yield supplies one operation.
+    // Halt returns to the resume loop.
+    const op instructions[] = { (op)index, OP_HALT };
+    const op *pc = instructions;
+    NEXT();
+
+op_call:
+    // TODO: Process call data.
+    NEXT();
+op_wallet_create:
+    // TODO: Create a wallet.
+    NEXT();
+op_get_chain_id:
+    // TODO: Return the chain ID.
+    NEXT();
+op_halt:
+    return 1;
+op_invalid:
+    printf("(c) error: Unknown operation index\n");
+    return 0;
+}
+
+#undef NEXT
 
 void start_lua_runtime(lua_runtime_ctx *ctx)
 {
@@ -64,8 +115,20 @@ void start_lua_runtime(lua_runtime_ctx *ctx)
                 break;
             }
 
-            // .. process operation
-            lua_pop(co, nresults);
+            lua_getfield(co, -1, "index");
+            lua_getfield(co, -2, "data");
+            // lua_stack = [yielded operation, index, data]
+            if (!lua_isinteger(co, -2)) {
+                printf("(c) error: Op.index must be an integer\n");
+                break;
+            }
+
+            lua_Integer index = lua_tointeger(co, -2);
+            if (!handle_operation(co, index)) {
+                break;
+            }
+
+            lua_pop(co, nresults + 2);
             lua_pushinteger(co, 24);
             nargs = 1;
         } else if (status == LUA_OK) {
