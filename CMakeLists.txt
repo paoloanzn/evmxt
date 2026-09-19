@@ -9,7 +9,8 @@ add_executable(evmxt main.c
     eip_1559_tx.c
     rlp.c
     eth_crypto.c
-    selector.c)
+    selector.c
+    runtime.c)
 
 find_package(unofficial-lua CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
