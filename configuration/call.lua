@@ -1,7 +1,7 @@
 --[[
     This module defines a Call object interface.
     The Call object is the only data structure,
-    related to transactions, that the C engine receives.
+    related to transactions, that the C engine executes.
 
     Everything in transactions chain from ABI encoding and on,
     belongs to the C engine, not to Lua. Lua stops just before
