@@ -94,7 +94,7 @@ end
 -- Runtime validation for Call objects 
 ---@param name string
 ---@param params AbiParam[]
----@param to? string Destination address: 0x followed by 40 hex digits.
+---@param to string
 ---@return Call
 function Call.new(name, params, to)
     assert(to == nil or (type(to) == "string" and #to == 42 and to:match("^0x[0-9a-fA-F]+$")),
