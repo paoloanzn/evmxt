@@ -22,7 +22,8 @@ local Call = require("lua-lib.call").Call
 ---@enum operation
 local operation = {
     call = { "call", Call },
-    wallet_create = { "wallet_create", nil }
+    wallet_create = { "wallet_create", nil },
+    get_chain_id = { "get_chain_id", nil }
 }
 
 ---@class Op
