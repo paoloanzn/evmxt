@@ -4,14 +4,13 @@
     (2) the Op object.
 
     The Op object contains the operation's name, dispatch index, and
-    operation's raw data.
+    operation's raw data, and an optional destination for calls.
 
     Usage: wrap a Call in an operation:
     local Call = require("lua-lib.call").Call
     local Op = require("lua-lib.ops").Op
-    local op = Op.new("call", Call.new("batch", {
-        { type = "(bool,uint256[])[]", value = { { true, { 1, 2 } }, { false, { 3 } } } }
-    }))
+    local batch = Call.compile("batch", { "(bool,uint256[])[]" })
+    local op = Op.new("call", batch({ { true, { 1, 2 } }, { false, { 3 } } }), token)
     local wallet = Op.new("wallet_create")
 ]]--
 
@@ -32,6 +31,7 @@ local operation = {
 ---@field type string
 ---@field index integer Zero-based C dispatch index.
 ---@field data any
+---@field to string|nil Destination address for call operations.
 local Op = {}
 Op.__index = Op
 
@@ -52,17 +52,22 @@ local function isValidOpData(op, data)
     return type(data) == "table" and getmetatable(data) == payloadClass
 end
 
----Runtime validation for Op objects
----@param type string
+-- Runtime validation for Op objects
+---@param op string
 ---@param data any
+---@param to? string
 ---@return Op
-function Op.new(type, data)
-    assert(isValidOpType(type), "Invalid operation: " .. tostring(type))
-    assert(isValidOpData(type, data), "Invalid data for operation: " .. type)
+function Op.new(op, data, to)
+    assert(isValidOpType(op), "Invalid operation: " .. tostring(op))
+    assert(isValidOpData(op, data), "Invalid data for operation: " .. op)
+    assert(to == nil or op == "call", "Only call operations accept a destination")
+    assert(to == nil or (type(to) == "string" and #to == 42
+        and to:match("^0x[0-9a-fA-F]+$")), "Invalid destination address")
     return setmetatable({
-        type = type,
-        index = operation[type][3],
-        data = data
+        type = op,
+        index = operation[op][3],
+        data = data,
+        to = to
     }, Op)
 end
 

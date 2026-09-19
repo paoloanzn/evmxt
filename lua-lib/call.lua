@@ -1,129 +1,66 @@
 --[[
-    This module defines a Call object interface.
-    The Call object is the only data structure,
-    related to transactions, that the C engine executes.
+    This module defines the Call interface, which prepares the function
+    description and argument values that the C engine needs for ABI encoding,
+    while leaving value validation, encoding and transaction execution to C.
 
-    Everything in transactions chain from ABI encoding and on,
-    belongs to the C engine, not to Lua. Lua stops just before
-    that. So a Call object represents what C needs to perform
-    ABI encoding.
+    Call.compile takes a function name and its parameter types and returns a
+    reusable definition that can be prepared at program startup, so each later
+    call only supplies positional values without parsing types or computing
+    the selector again.
 
-    All the other transactions-related parameters such as
-    gas_limit, nonce, priority_fee and others, do not belong
-    here. They are instead handled in a separate workflow.
+    Array and tuple arguments are passed directly as Lua tables, and both
+    these values and the compiled descriptors are shared with the resulting
+    Call objects, so they should be treated as read-only while in use.
 
+    The destination belongs to the surrounding Op, while transaction settings
+    such as gas limit, nonce and priority fee are handled in a separate workflow.
 
-    Usage: compose a transaction's Call using positional tuple/array values:
+    Usage: compile a transfer once, then supply its arguments and destination:
+
     local Call = require("lua-lib.call").Call
-    local call = Call.new("batch", {
-        { type = "(bool,uint256[])[]", value = { { true, { 1, 2 } }, { false, { 3 } } } }
-    }, "0x1111111111111111111111111111111111111111")
-    -- Omit the third argument (or pass nil) when no destination is needed.
+    local Op = require("lua-lib.ops").Op
+    local transfer = Call.compile("transfer", { "address", "uint256" })
+    local op = Op.new("call", transfer(recipient, amount), token)
 ]]--
 
 local M = {}
-
----@class AbiParam
----@field type string ABI type, e.g. uint256, (address,uint256[]), (bool,bytes)[2][]
----@field value any
+local compiler = require("lua-lib.compiler")
 
 ---@class Call
----@field name string
----@field params AbiParam[]
----@field to string|nil Destination address: 0x followed by 40 hex digits (no checksum validation).
+---@field selector string Four raw bytes.
+---@field signature string Canonical function signature.
+---@field params table[] Shared compiled type descriptors.
+---@field values table Positional argument values.
 local Call = {}
 Call.__index = Call
 
-local function isValidAbiType(t, depth)
-    depth = (depth or 0) + 1
-    if type(t) ~= "string" or depth > 64 then return false end
-    local base, size = t:match("^(.-)%[([0-9]*)%]$")
-    if base then
-        return (size == "" or size == "0" or size:match("^[1-9][0-9]*$") ~= nil)
-            and isValidAbiType(base, depth)
-    end
-    if t:sub(1, 1) == "(" and t:sub(-1) == ")" then
-        local inner, level, start = t:sub(2, -2), 0, 1
-        if inner == "" then return true end
-        for i = 1, #inner do
-            local c = inner:sub(i, i)
-            if c == "(" then level = level + 1 end
-            if c == ")" then level = level - 1 end
-            if level < 0 then return false end
-            if c == "," and level == 0 then
-                if not isValidAbiType(inner:sub(start, i - 1), depth) then return false end
-                start = i + 1
-            end
-        end
-        return level == 0 and isValidAbiType(inner:sub(start), depth)
-    end
-    if t == "address" then
-        return true
+local CompiledCall = {}
+
+function CompiledCall:__call(...)
+    local count = #self.params
+    assert(select("#", ...) == count, "Incorrect argument count")
+    local values = { ... }
+    for i = 1, count do
+        assert(values[i] ~= nil, "Missing argument #" .. i)
     end
 
-    if t == "bool" then
-        return true
-    end
-
-    if t == "string" then
-        return true
-    end
-
-    if t == "bytes" then
-        return true
-    end
-
-    if t:match("^uint%d*$") then
-        local bits = t == "uint" and 256 or tonumber(t:match("^uint([1-9]%d*)$"))
-        return bits ~= nil and bits <= 256 and bits % 8 == 0
-    end
-
-    if t:match("^int%d*$") then
-        local bits = t == "int" and 256 or tonumber(t:match("^int([1-9]%d*)$"))
-        return bits ~= nil and bits <= 256 and bits % 8 == 0
-    end
-
-    if t:match("^bytes%d+$") then
-        local size = tonumber(t:match("^bytes([1-9]%d*)$"))
-        return size ~= nil and size <= 32
-    end
-
-    return false
+    return setmetatable({
+        selector = self.selector,
+        signature = self.signature,
+        params = self.params,
+        values = values,
+    }, Call)
 end
 
--- Runtime validation for Call objects 
+-- Compile a reusable, callable definition without values or a destination.
 ---@param name string
----@param params AbiParam[]
----@param to string
----@return Call
-function Call.new(name, params, to)
-    assert(to == nil or (type(to) == "string" and #to == 42 and to:match("^0x[0-9a-fA-F]+$")),
-        "Invalid destination address: expected nil or 0x followed by 40 hex digits")
-    assert(type(name) == "string")
-    assert(name:match("^[%a_][%w_]*$"), "Invalid function name")
-    assert(type(params) == "table", "Parameters must be an array")
-    local count = 0
-    for key in pairs(params) do
-        count = count + 1
-        assert(type(key) == "number" and key % 1 == 0 and key >= 1, "Invalid parameter index")
-    end
-    for i = 1, count do assert(rawget(params, i) ~= nil, "Sparse parameters") end
-    
-        for i, param in ipairs(params) do
-            assert(type(param) == "table", "Invalid parameter #" .. i)
-            assert(
-                isValidAbiType(param.type),
-                "Invalid ABI type: " .. tostring(param.type)
-            )
-        end
-
-        return setmetatable({
-            name = name,
-            params = params,
-            to = to
-        }, Call)
+---@param types string[]
+---@return table
+function Call.compile(name, types)
+    return setmetatable(compiler.compile(name, types), CompiledCall)
 end
-
 
 M.Call = Call
+M.ABI = compiler.ABI
+
 return M

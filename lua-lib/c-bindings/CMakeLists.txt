@@ -9,7 +9,12 @@ find_package(libsecp256k1 CONFIG REQUIRED)
 find_package(OpenSSL 3.2 REQUIRED)
 
 file(GLOB BINDING_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
-add_library(bindings MODULE ${BINDING_SOURCES})
+add_library(bindings MODULE
+    ${BINDING_SOURCES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../selector.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../eth_crypto.c"
+)
+target_include_directories(bindings PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 target_link_libraries(bindings PRIVATE
     unofficial::lua::lua
     libsecp256k1::secp256k1
