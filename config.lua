@@ -14,4 +14,4 @@ local function init()
 	return config
 end
 
-global_config = init()
+_G.global_config = init()
