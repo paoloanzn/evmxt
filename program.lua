@@ -12,6 +12,7 @@
 
 -- local Call = require("lua-lib.call").Call
 local Op = require("lua-lib.ops").Op
+local wallet_store = require("lua-lib.wallet")
 
 ---@param op Op
 ---@return any
@@ -27,12 +28,29 @@ return {
 
         print(string.format("From lua, chain_id = %s", chain_id))
 
-        local wallet = send_op(
-            Op.new("wallet_create", nil)
-        )
-        print("New wallet:")
-        for _idx, key in ipairs({"address", "private_key", "public_key"}) do
-            print(string.format("%s: %s", tostring(key), tostring(wallet[key])))
+        local address, err = wallet_store.search({ name = "sec" })
+        assert(not err, err)
+
+        if not address then
+            local wallet = send_op(
+                Op.new("wallet_create", nil)
+            )
+            print("New wallet:")
+            for _, key in ipairs({"address", "private_key", "public_key"}) do
+                print(string.format("%s: %s", tostring(key), tostring(wallet[key])))
+            end
+
+            assert(wallet_store.store(
+                        wallet["address"],
+                        wallet["private_key"],
+                        { name = "sec" }))
+        else
+            local wallet = assert(wallet_store.load(address))
+            print("Loaded wallet:")
+            for _, key in ipairs({"address", "private_key", "public_key"}) do
+                print(string.format("%s: %s", tostring(key), tostring(wallet[key])))
+            end
         end
+
     end
 }

@@ -12,12 +12,27 @@
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build",
       "toolchainFile": "/home/ubuntu/vcpkg/scripts/buildsystems/vcpkg.cmake"
+    },
+    {
+      "name": "c-bindings",
+      "displayName": "Lua C bindings (vcpkg)",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build/c-bindings",
+      "cacheVariables": {
+        "EVMXT_BUILD_C_BINDINGS_ONLY": "ON",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/vcpkg_installed"
+      }
     }
   ],
   "buildPresets": [
     {
       "name": "default",
       "configurePreset": "default"
+    },
+    {
+      "name": "c-bindings",
+      "configurePreset": "c-bindings",
+      "targets": ["bindings"]
     }
   ]
 }

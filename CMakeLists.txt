@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.10)
 
 project(evmxt LANGUAGES C)
 
+option(EVMXT_BUILD_C_BINDINGS_ONLY "Build only the Lua C bindings" OFF)
+
+if(EVMXT_BUILD_C_BINDINGS_ONLY)
+    add_subdirectory(lua-lib/c-bindings)
+    return()
+endif()
+
 
 add_executable(evmxt main.c
     rpc.c
