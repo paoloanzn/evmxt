@@ -3,6 +3,7 @@
 #include <lauxlib.h>
 
 #include "runtime.h"
+#include "operations.h"
 
 #define PROGRAM_FILEPATH "program.lua"
 #define NEXT() goto *dispatch[*pc++]
@@ -17,10 +18,9 @@ typedef enum {
 
 
 // Return zero when dispatch fails, so the caller can stop the runtime.
-static int handle_operation(lua_State *co, lua_Integer index)
+static int handle_operation(lua_State *co, lua_runtime_ctx *ctx, lua_Integer index)
 {
     // lua_stack = [yielded operation, index, data]
-    (void)co;
 
     // GCC/Clang labels-as-values; indices match lua-lib/ops.lua.
     static void *const dispatch[] = {
@@ -40,13 +40,13 @@ static int handle_operation(lua_State *co, lua_Integer index)
     NEXT();
 
 op_call:
-    // TODO: Process call data.
-    NEXT();
+    printf("(c) error: call is not implemented\n");
+    return 0;
 op_wallet_create:
-    // TODO: Create a wallet.
+    if (!operation_create_wallet(co, ctx)) return 0;
     NEXT();
 op_get_chain_id:
-    // TODO: Return the chain ID.
+    if (!operation_get_chain_id(co, ctx)) return 0;
     NEXT();
 op_halt:
     return 1;
@@ -60,6 +60,10 @@ op_invalid:
 void start_lua_runtime(lua_runtime_ctx *ctx)
 {
     lua_State *L = luaL_newstate();
+    if (L == NULL) {
+        printf("(c) error: Failed to create Lua state\n");
+        return;
+    }
     luaL_openlibs(L);
 
     lua_State *co = lua_newthread(L);
@@ -124,12 +128,13 @@ void start_lua_runtime(lua_runtime_ctx *ctx)
             }
 
             lua_Integer index = lua_tointeger(co, -2);
-            if (!handle_operation(co, index)) {
+            if (!handle_operation(co, ctx, index)) {
                 break;
             }
 
-            lua_pop(co, nresults + 2);
-            lua_pushinteger(co, 24);
+            // Keep the response while removing the yielded operation and its fields.
+            lua_replace(co, -4);
+            lua_pop(co, 2);
             nargs = 1;
         } else if (status == LUA_OK) {
             break;

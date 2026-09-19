@@ -26,5 +26,13 @@ return {
         )
 
         print(string.format("From lua, chain_id = %s", chain_id))
+
+        local wallet = send_op(
+            Op.new("wallet_create", nil)
+        )
+        print("New wallet:")
+        for _idx, key in ipairs({"address", "private_key", "public_key"}) do
+            print(string.format("%s: %s", tostring(key), tostring(wallet[key])))
+        end
     end
 }
