@@ -1,4 +1,4 @@
-require "configuration.dotenv".config()
+require "dotenv".config()
 
 local function print_error_and_exit(message)
 	print(string.format("error: %s", message))

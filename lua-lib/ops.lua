@@ -16,7 +16,7 @@
 ]]--
 
 local M = {}
-local Call = require("configuration.call").Call
+local Call = require("lua-lib.call").Call
 
 -- Each definition contains { operation name, payload class or nil }.
 ---@enum operation
