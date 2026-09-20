@@ -12,7 +12,8 @@ typedef enum {
     OP_CALL = 0,
     OP_WALLET_CREATE = 1,
     OP_GET_CHAIN_ID = 2,
-    OP_COUNT = 3,
+    OP_SET_WALLET = 3,
+    OP_COUNT = 4,
     OP_HALT = OP_COUNT, // Internal instruction; never accepted from Lua.
 } op;
 
@@ -27,6 +28,7 @@ static int handle_operation(lua_State *co, lua_runtime_ctx *ctx, lua_Integer ind
         [OP_CALL] = &&op_call,
         [OP_WALLET_CREATE] = &&op_wallet_create,
         [OP_GET_CHAIN_ID] = &&op_get_chain_id,
+        [OP_SET_WALLET] = &&op_set_wallet,
         [OP_HALT] = &&op_halt,
     };
     if (index < 0 || index >= OP_COUNT) {
@@ -47,6 +49,9 @@ op_wallet_create:
     NEXT();
 op_get_chain_id:
     if (!operation_get_chain_id(co, ctx)) return 0;
+    NEXT();
+op_set_wallet:
+    if (!operation_set_wallet(co, ctx)) return 0;
     NEXT();
 op_halt:
     return 1;

@@ -20,4 +20,7 @@ int operation_create_wallet(lua_State *co, lua_runtime_ctx *ctx);
 // The payload must be nil and RPC errors or invalid quantities stop the operation.
 int operation_get_chain_id(lua_State *co, lua_runtime_ctx *ctx);
 
+// Set the active wallet in lua_runtime_ctx used for transanctions.
+int operation_set_wallet(lua_State *co, lua_runtime_ctx *ctx);
+
 #endif /* OPERATIONS_H */

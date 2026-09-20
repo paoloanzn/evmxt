@@ -1,5 +1,7 @@
+#include <lua.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <openssl/crypto.h>
 
 #include "operations.h"
@@ -99,5 +101,30 @@ int operation_get_chain_id(lua_State *co, lua_runtime_ctx *ctx)
     lua_pushinteger(co, (lua_Integer)chain_id);
     // lua_stack = [operation, index, data, chain_id]
     ctx->chain_id = chain_id;
+    return 1;
+}
+
+int operation_set_wallet(lua_State *co, lua_runtime_ctx *ctx)
+{
+    // lua_stack = [operation, index, data]
+    (void)ctx;
+    // Private key is passed as an hex encoded string 0x...
+    if (!lua_isstring(co, -1)) {
+        printf("(c) error: set_wallet requires a private_key\n");
+        return 0;
+    }
+
+    uint8_t private_key_out[32];
+    int w_bytes = hex_decode(lua_tostring(co, -1), private_key_out, 32);
+    // A private key is exactly 32 bytes long.
+    if (w_bytes != 32) {
+        printf("(c) error: error decoding private_key\n");
+        return 0;
+    }
+
+    memcpy(ctx->private_key, private_key_out, 32);
+
+    // Return true to lua
+    lua_pushboolean(co, 1);
     return 1;
 }

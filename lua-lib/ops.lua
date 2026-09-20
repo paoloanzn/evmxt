@@ -17,14 +17,15 @@
 local M = {}
 local Call = require("lua-lib.call").Call
 
--- Each definition contains { operation name, payload class or nil, index }.
+-- Each definition contains { operation name, payload class/type name or nil, index }.
 -- Indices are zero-based and must match runtime.c's op enum and dispatch table.
 -- Add new operations with the next index and a corresponding C handler.
 ---@enum operation
 local operation = {
     call = { "call", Call, 0 },
     wallet_create = { "wallet_create", nil, 1 },
-    get_chain_id = { "get_chain_id", nil, 2 }
+    get_chain_id = { "get_chain_id", nil, 2 },
+    set_wallet = { "set_wallet", "string", 3 }
 }
 
 ---@class Op
@@ -48,6 +49,9 @@ local function isValidOpData(op, data)
     local payloadClass = operation[op][2]
     if payloadClass == nil then
         return data == nil
+    end
+    if type(payloadClass) == "string" then
+        return type(data) == payloadClass
     end
     return type(data) == "table" and getmetatable(data) == payloadClass
 end

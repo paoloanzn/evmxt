@@ -9,6 +9,7 @@ typedef struct {
     uint64_t gas_limit;
     uint8_t max_priority_fee_per_gas[32]; // Wei/gas; must not exceed max_fee_per_gas.
     uint8_t max_fee_per_gas[32];          // Wei/gas, including tip.
+    uint8_t private_key[32];
 
     const char *rpc_url;
 } lua_runtime_ctx;
