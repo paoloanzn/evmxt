@@ -13,6 +13,9 @@ typedef struct {
     uint8_t private_key[32];
     uint8_t address[20];
     bool wallet_set;
+    bool chain_id_set;
+    bool nonce_set;
+    bool gas_set;
 
     const char *rpc_url;
 } lua_runtime_ctx;

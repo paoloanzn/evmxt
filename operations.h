@@ -9,9 +9,9 @@
 // return 1 after pushing one response, or report an error and return 0 while
 // leaving the stack unchanged so the runtime can stop the program.
 
-// Encode the compiled Call payload and execute eth_call at "latest", using
-// the surrounding operation's required to address. Returns the RPC result
-// string without decoding ABI return values.
+// Encode the compiled Call payload, build and sign an EIP-1559 transaction
+// using the active runtime wallet and transaction settings, broadcast it with
+// eth_sendRawTransaction, and return the resulting transaction hash.
 int operation_call(lua_State *co, lua_runtime_ctx *ctx);
 
 // Create a wallet from a secure random private key and return a table with

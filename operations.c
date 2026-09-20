@@ -5,6 +5,7 @@
 #include <openssl/crypto.h>
 
 #include "operations.h"
+#include "eip_1559_tx.h"
 #include "eth_crypto.h"
 #include "hex.h"
 #include "rpc.h"
@@ -16,11 +17,28 @@ int operation_call(lua_State *co, lua_runtime_ctx *ctx)
     int top = lua_gettop(co);
     abi_buffer calldata = {0};
     char error[2048] = "";
-    char *data = NULL, *params = NULL, *response = NULL;
+    uint8_t *raw = NULL;
+    char *raw_hex = NULL, *params = NULL, *response = NULL;
     const char *failure = NULL;
 
     if (!ctx || !ctx->rpc_url || !ctx->rpc_url[0]) {
         failure = "call requires an RPC URL";
+        goto cleanup;
+    }
+    if (!ctx->wallet_set) {
+        failure = "call requires an active wallet";
+        goto cleanup;
+    }
+    if (!ctx->chain_id_set) {
+        failure = "call requires chain ID";
+        goto cleanup;
+    }
+    if (!ctx->nonce_set) {
+        failure = "call requires a nonce";
+        goto cleanup;
+    }
+    if (!ctx->gas_set) {
+        failure = "call requires gas settings";
         goto cleanup;
     }
     if (top < 3 || !lua_istable(co, top - 2) || !lua_checkstack(co, 2)) {
@@ -30,10 +48,10 @@ int operation_call(lua_State *co, lua_runtime_ctx *ctx)
     lua_pushliteral(co, "to");
     lua_rawget(co, top - 2);
     size_t to_length = 0;
-    const char *to = lua_type(co, -1) == LUA_TSTRING ? lua_tolstring(co, -1, &to_length) : NULL;
-    uint8_t address[20];
-    if (!to || to_length != 42 || to[0] != '0' || to[1] != 'x'
-        || memchr(to, '\0', to_length) || hex_decode(to, address, sizeof(address)) != 20) {
+    const char *to_hex = lua_type(co, -1) == LUA_TSTRING ? lua_tolstring(co, -1, &to_length) : NULL;
+    uint8_t to[20];
+    if (!to_hex || to_length != 42 || to_hex[0] != '0' || to_hex[1] != 'x'
+        || memchr(to_hex, '\0', to_length) || hex_decode(to_hex, to, sizeof(to)) != 20) {
         failure = "call requires Op.to: 0x followed by 40 hex digits";
         goto cleanup;
     }
@@ -41,30 +59,77 @@ int operation_call(lua_State *co, lua_runtime_ctx *ctx)
         failure = error;
         goto cleanup;
     }
-    if (calldata.len > (SIZE_MAX - 3) / 2) {
-        failure = "calldata is too large to hex-encode";
-        goto cleanup;
-    }
-    data = malloc(calldata.len * 2 + 3);
-    if (!data) {
-        failure = "cannot allocate calldata hex string";
-        goto cleanup;
-    }
-    hex_encode(calldata.data, calldata.len, data);
+    eip_1559_tx tx = {0};
+    tx.chain_id = ctx->chain_id;
+    tx.nonce = ctx->nonce;
+    memcpy(tx.max_priority_fee_per_gas, ctx->max_priority_fee_per_gas,
+           sizeof(tx.max_priority_fee_per_gas));
+    memcpy(tx.max_fee_per_gas, ctx->max_fee_per_gas, sizeof(tx.max_fee_per_gas));
+    tx.gas_limit = ctx->gas_limit;
+    tx.to = to;
+    tx.data = calldata.data;
+    tx.data_len = calldata.len;
+    tx.access_list = NULL;
+    tx.access_list_count = 0;
 
-    // Both strings contain validated hex, so no JSON escaping is needed here.
-    const char *format = "[{\"to\":\"%s\",\"data\":\"%s\"},\"latest\"]";
-    int length = snprintf(NULL, 0, format, to, data);
-    if (length < 0 || !(params = malloc((size_t)length + 1))) {
-        failure = "cannot allocate eth_call parameters";
+    size_t raw_len = 0;
+    eip_1559_status status =
+        eip_1559_tx_encode(&tx, ctx->private_key, NULL, 0, &raw_len);
+    if (status != EIP_1559_NO_SPACE) {
+        snprintf(error, sizeof(error), "cannot size signed transaction (status %d)", status);
+        failure = error;
         goto cleanup;
     }
-    snprintf(params, (size_t)length + 1, format, to, data);
-    response = rpc_call(ctx->rpc_url, "eth_call", params);
-    if (!response) failure = "eth_call RPC request failed";
+    raw = malloc(raw_len);
+    if (!raw) {
+        failure = "cannot allocate signed transaction";
+        goto cleanup;
+    }
+    status = eip_1559_tx_encode(&tx, ctx->private_key, raw, raw_len, &raw_len);
+    if (status != EIP_1559_OK) {
+        snprintf(error, sizeof(error), "cannot encode signed transaction (status %d)", status);
+        failure = error;
+        goto cleanup;
+    }
+    if (raw_len > (SIZE_MAX - 3) / 2) {
+        failure = "signed transaction is too large to hex-encode";
+        goto cleanup;
+    }
+    raw_hex = malloc(raw_len * 2 + 3);
+    if (!raw_hex) {
+        failure = "cannot allocate signed transaction hex string";
+        goto cleanup;
+    }
+    hex_encode(raw, raw_len, raw_hex);
+
+    // Generated hex requires no JSON escaping.
+    const char *format = "[\"%s\"]";
+    int length = snprintf(NULL, 0, format, raw_hex);
+    if (length < 0 || !(params = malloc((size_t)length + 1))) {
+        failure = "cannot allocate eth_sendRawTransaction parameters";
+        goto cleanup;
+    }
+    snprintf(params, (size_t)length + 1, format, raw_hex);
+    response = rpc_call(ctx->rpc_url, "eth_sendRawTransaction", params);
+    if (!response) {
+        failure = "eth_sendRawTransaction RPC request failed";
+        goto cleanup;
+    }
+    uint8_t hash[32];
+    if (strlen(response) != 66 || response[0] != '0' || response[1] != 'x' ||
+        hex_decode(response, hash, sizeof(hash)) != 32) {
+        failure = "eth_sendRawTransaction returned an invalid transaction hash";
+        goto cleanup;
+    }
+    if (ctx->nonce == UINT64_MAX) {
+        ctx->nonce_set = false;
+    } else {
+        ctx->nonce++;
+    }
 
 cleanup:
-    free(data);
+    free(raw);
+    free(raw_hex);
     free(params);
     abi_buffer_free(&calldata);
     lua_settop(co, top);
@@ -170,6 +235,7 @@ int operation_get_chain_id(lua_State *co, lua_runtime_ctx *ctx)
     lua_pushinteger(co, (lua_Integer)chain_id);
     // lua_stack = [operation, index, data, chain_id]
     ctx->chain_id = chain_id;
+    ctx->chain_id_set = true;
     return 1;
 }
 
@@ -253,6 +319,7 @@ int operation_get_nonce(lua_State *co, lua_runtime_ctx *ctx)
     }
 
     ctx->nonce = nonce;
+    ctx->nonce_set = true;
     lua_pushinteger(co, (lua_Integer)nonce);
     return 1;
 }
@@ -290,6 +357,7 @@ int operation_set_gas(lua_State *co, lua_runtime_ctx *ctx)
     ctx->gas_limit = (uint64_t)lua_tointeger(co, -3);
     memcpy(ctx->max_priority_fee_per_gas, priority, 32);
     memcpy(ctx->max_fee_per_gas, maximum, 32);
+    ctx->gas_set = true;
     lua_settop(co, top);
     lua_pushboolean(co, 1);
     return 1;
