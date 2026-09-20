@@ -28,4 +28,8 @@ int operation_set_wallet(lua_State *co, lua_runtime_ctx *ctx);
 // or return -1 without an RPC request when no wallet has been set.
 int operation_get_nonce(lua_State *co, lua_runtime_ctx *ctx);
 
+// Copy a validated Gas object's limit and 32-byte big-endian fees into ctx
+// and return true, leaving the previous settings intact if its storage is invalid.
+int operation_set_gas(lua_State *co, lua_runtime_ctx *ctx);
+
 #endif /* OPERATIONS_H */

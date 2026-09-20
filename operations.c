@@ -187,3 +187,41 @@ int operation_get_nonce(lua_State *co, lua_runtime_ctx *ctx)
     lua_pushinteger(co, (lua_Integer)nonce);
     return 1;
 }
+
+int operation_set_gas(lua_State *co, lua_runtime_ctx *ctx)
+{
+    // Lua Gas objects already contain validated settings and normalized fees.
+    int top = lua_gettop(co);
+    if (ctx == NULL || !lua_istable(co, top) || !lua_checkstack(co, 3)) {
+        printf("(c) error: set_gas requires a runtime context and a Gas object\n");
+        return 0;
+    }
+
+    lua_pushliteral(co, "gas_limit");
+    lua_rawget(co, top);
+    lua_pushliteral(co, "max_priority_fee_per_gas");
+    lua_rawget(co, top);
+    lua_pushliteral(co, "max_fee_per_gas");
+    lua_rawget(co, top);
+
+    size_t priority_length = 0, maximum_length = 0;
+    const char *priority = lua_type(co, -2) == LUA_TSTRING
+        ? lua_tolstring(co, -2, &priority_length) : NULL;
+    const char *maximum = lua_type(co, -1) == LUA_TSTRING
+        ? lua_tolstring(co, -1, &maximum_length) : NULL;
+
+    // Check the storage shape before copying, in case Lua code changed the object.
+    if (!lua_isinteger(co, -3) || lua_tointeger(co, -3) < 0 ||
+        priority_length != 32 || maximum_length != 32) {
+        lua_settop(co, top);
+        printf("(c) error: invalid Gas object storage\n");
+        return 0;
+    }
+
+    ctx->gas_limit = (uint64_t)lua_tointeger(co, -3);
+    memcpy(ctx->max_priority_fee_per_gas, priority, 32);
+    memcpy(ctx->max_fee_per_gas, maximum, 32);
+    lua_settop(co, top);
+    lua_pushboolean(co, 1);
+    return 1;
+}

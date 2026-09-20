@@ -16,6 +16,7 @@
 
 local M = {}
 local Call = require("lua-lib.call").Call
+local Gas = require("lua-lib.gas").Gas
 
 -- Each definition contains { operation name, payload class/type name or nil, index }.
 -- Indices are zero-based and must match runtime.c's op enum and dispatch table.
@@ -26,7 +27,8 @@ local operation = {
     wallet_create = { "wallet_create", nil, 1 },
     get_chain_id = { "get_chain_id", nil, 2 },
     set_wallet = { "set_wallet", "string", 3 },
-    get_nonce = { "get_nonce", nil, 4 }
+    get_nonce = { "get_nonce", nil, 4 },
+    set_gas = { "set_gas", Gas, 5 }
 }
 
 ---@class Op
