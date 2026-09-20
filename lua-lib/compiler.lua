@@ -64,6 +64,12 @@ local function parse(source)
     assert(type(source) == "string", "ABI type must be a string")
     local pos = 1
 
+    local function match_at(pattern)
+        local first, last = source:find(pattern, pos)
+        if first ~= pos then return nil end
+        return source:sub(first, last)
+    end
+
     local function consume(character)
         if source:sub(pos, pos) ~= character then return false end
         pos = pos + 1
@@ -90,14 +96,14 @@ local function parse(source)
             node = { kind = ABI.TUPLE, components = components, dynamic = dynamic }
             canonical = "(" .. table.concat(names, ",") .. ")"
         else
-            local token = source:match("^[a-z]+[0-9]*", pos)
+            local token = match_at("[a-z]+[0-9]*")
             assert(token, "Expected ABI type at byte " .. pos .. " in " .. source)
             pos = pos + #token
             node, canonical = scalar(token)
         end
 
         while consume("[") do
-            local digits = source:match("^[0-9]*", pos)
+            local digits = match_at("[0-9]*")
             pos = pos + #digits
             assert(consume("]"), "Expected ']' at byte " .. pos .. " in " .. source)
             local length
