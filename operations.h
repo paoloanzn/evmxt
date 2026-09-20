@@ -33,6 +33,11 @@ int operation_set_wallet(lua_State *co, lua_runtime_ctx *ctx);
 // or return -1 without an RPC request when no wallet has been set.
 int operation_get_nonce(lua_State *co, lua_runtime_ctx *ctx);
 
+// Query eth_getBalance for the active wallet at "latest" and return its wei
+// balance as a validated 0x quantity string (up to 256 bits). No payload or
+// runtime state changes; requires an active wallet.
+int operation_get_balance(lua_State *co, lua_runtime_ctx *ctx);
+
 // Copy a validated Gas object's limit and 32-byte big-endian fees into ctx
 // and return true, leaving the previous settings intact if its storage is invalid.
 int operation_set_gas(lua_State *co, lua_runtime_ctx *ctx);

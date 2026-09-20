@@ -324,6 +324,47 @@ int operation_get_nonce(lua_State *co, lua_runtime_ctx *ctx)
     return 1;
 }
 
+int operation_get_balance(lua_State *co, lua_runtime_ctx *ctx)
+{
+    // lua_stack = [operation, index, data]
+    if (!ctx || !lua_isnil(co, -1)) {
+        printf("(c) error: get_balance requires a runtime context and no data\n");
+        return 0;
+    }
+    if (!ctx->wallet_set) {
+        printf("(c) error: get_balance requires an active wallet\n");
+        return 0;
+    }
+    if (!ctx->rpc_url || !ctx->rpc_url[0]) {
+        printf("(c) error: get_balance requires an RPC URL\n");
+        return 0;
+    }
+
+    char address[43];
+    char params[sizeof("[\"\",\"latest\"]") + 42];
+    hex_encode(ctx->address, sizeof(ctx->address), address);
+    snprintf(params, sizeof(params), "[\"%s\",\"latest\"]", address);
+    char *response = rpc_call(ctx->rpc_url, "eth_getBalance", params);
+    if (!response) {
+        printf("(c) error: eth_getBalance RPC request failed\n");
+        return 0;
+    }
+
+    size_t length = strlen(response);
+    uint8_t balance[32];
+    if (length < 3 || length > 66 || response[0] != '0' || response[1] != 'x' ||
+        (length > 3 && response[2] == '0') ||
+        hex_decode(response, balance, sizeof(balance)) <= 0) {
+        free(response);
+        printf("(c) error: eth_getBalance returned an invalid balance quantity\n");
+        return 0;
+    }
+
+    lua_pushstring(co, response);
+    free(response);
+    return 1;
+}
+
 int operation_set_gas(lua_State *co, lua_runtime_ctx *ctx)
 {
     // Lua Gas objects already contain validated settings and normalized fees.

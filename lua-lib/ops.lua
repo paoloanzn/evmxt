@@ -28,7 +28,8 @@ local operation = {
     get_chain_id = { "get_chain_id", nil, 2 },
     set_wallet = { "set_wallet", "string", 3 },
     get_nonce = { "get_nonce", nil, 4 },
-    set_gas = { "set_gas", Gas, 5 }
+    set_gas = { "set_gas", Gas, 5 },
+    get_balance = { "get_balance", nil, 6 }
 }
 
 ---@class Op
