@@ -25,7 +25,8 @@ local operation = {
     call = { "call", Call, 0 },
     wallet_create = { "wallet_create", nil, 1 },
     get_chain_id = { "get_chain_id", nil, 2 },
-    set_wallet = { "set_wallet", "string", 3 }
+    set_wallet = { "set_wallet", "string", 3 },
+    get_nonce = { "get_nonce", nil, 4 }
 }
 
 ---@class Op

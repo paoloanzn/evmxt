@@ -20,7 +20,12 @@ int operation_create_wallet(lua_State *co, lua_runtime_ctx *ctx);
 // The payload must be nil and RPC errors or invalid quantities stop the operation.
 int operation_get_chain_id(lua_State *co, lua_runtime_ctx *ctx);
 
-// Set the active wallet in lua_runtime_ctx used for transanctions.
+// Set the active wallet's private key and derived address together, leaving
+// the previous wallet unchanged if the key cannot be decoded or used.
 int operation_set_wallet(lua_State *co, lua_runtime_ctx *ctx);
+
+// Fetch the active wallet's pending nonce, store it in ctx and return it to Lua,
+// or return -1 without an RPC request when no wallet has been set.
+int operation_get_nonce(lua_State *co, lua_runtime_ctx *ctx);
 
 #endif /* OPERATIONS_H */

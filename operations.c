@@ -107,24 +107,83 @@ int operation_get_chain_id(lua_State *co, lua_runtime_ctx *ctx)
 int operation_set_wallet(lua_State *co, lua_runtime_ctx *ctx)
 {
     // lua_stack = [operation, index, data]
-    (void)ctx;
-    // Private key is passed as an hex encoded string 0x...
-    if (!lua_isstring(co, -1)) {
+    if (ctx == NULL || lua_type(co, -1) != LUA_TSTRING) {
         printf("(c) error: set_wallet requires a private_key\n");
         return 0;
     }
 
-    uint8_t private_key_out[32];
-    int w_bytes = hex_decode(lua_tostring(co, -1), private_key_out, 32);
-    // A private key is exactly 32 bytes long.
-    if (w_bytes != 32) {
-        printf("(c) error: error decoding private_key\n");
+    size_t length;
+    const char *key = lua_tolstring(co, -1, &length);
+    uint8_t private_key[32], address[20];
+
+    // Perform checks to ensure that private_key is valid and
+    // derive its 20 bytes address.
+    if (length < 2 || memchr(key, '\0', length) ||
+        hex_decode(key, private_key, sizeof(private_key)) != 32 ||
+        derive_address(private_key, address) != 0) {
+        OPENSSL_cleanse(private_key, sizeof(private_key));
+        printf("(c) error: invalid private_key or failed address derivation\n");
         return 0;
     }
 
-    memcpy(ctx->private_key, private_key_out, 32);
+    memcpy(ctx->private_key, private_key, sizeof(private_key));
+    memcpy(ctx->address, address, sizeof(address));
+    ctx->wallet_set = true;
+    OPENSSL_cleanse(private_key, sizeof(private_key));
 
-    // Return true to lua
     lua_pushboolean(co, 1);
+    return 1;
+}
+
+int operation_get_nonce(lua_State *co, lua_runtime_ctx *ctx)
+{
+    // lua_stack = [operation, index, data]
+    if (ctx == NULL || !lua_isnil(co, -1)) {
+        printf("(c) error: get_nonce requires a runtime context and no data\n");
+        return 0;
+    }
+    if (!ctx->wallet_set) {
+        lua_pushinteger(co, -1);
+        return 1;
+    }
+    if (ctx->rpc_url == NULL || ctx->rpc_url[0] == '\0') {
+        printf("(c) error: get_nonce requires an RPC URL\n");
+        return 0;
+    }
+
+    // Both the address and block tag have fixed lengths, so this buffer is bounded.
+    char address[43];
+    char params[sizeof("[\"\",\"pending\"]") + 42];
+    hex_encode(ctx->address, sizeof(ctx->address), address);
+    snprintf(params, sizeof(params), "[\"%s\",\"pending\"]", address);
+
+    char *response = rpc_call(ctx->rpc_url, "eth_getTransactionCount", params);
+    if (response == NULL) {
+        printf("(c) error: Failed to query eth_getTransactionCount\n");
+        return 0;
+    }
+
+    uint8_t bytes[sizeof(uint64_t)];
+    size_t length = strlen(response);
+    int count = -1;
+    if (length >= 3 && length <= 18 && response[0] == '0' && response[1] == 'x' &&
+        (length == 3 || response[2] != '0')) {
+        count = hex_decode(response, bytes, sizeof(bytes));
+    }
+    free(response);
+
+    if (count <= 0) {
+        printf("(c) error: Invalid nonce returned by eth_getTransactionCount\n");
+        return 0;
+    }
+
+    uint64_t nonce = bytes_to_uint64(bytes, (size_t)count);
+    if (nonce > (uint64_t)LUA_MAXINTEGER) {
+        printf("(c) error: Nonce exceeds the Lua integer range\n");
+        return 0;
+    }
+
+    ctx->nonce = nonce;
+    lua_pushinteger(co, (lua_Integer)nonce);
     return 1;
 }
