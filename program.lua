@@ -44,13 +44,21 @@ return {
                         wallet["address"],
                         wallet["private_key"],
                         { name = "sec" }))
+            assert(send_op(Op.new("set_wallet", wallet["private_key"])))
         else
             local wallet = assert(wallet_store.load(address))
+            assert(send_op(Op.new("set_wallet", tostring(wallet["private_key"]))))
             print("Loaded wallet:")
             for _, key in ipairs({"address", "private_key", "public_key"}) do
                 print(string.format("%s: %s", tostring(key), tostring(wallet[key])))
             end
         end
 
+        local nonce = send_op(Op.new("get_nonce", nil))
+        if nonce < 0 then 
+            print("Failed to get nonce, verify an active wallet is set")
+        else
+            print(string.format("Nonce: %d", nonce))
+        end
     end
 }

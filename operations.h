@@ -9,6 +9,11 @@
 // return 1 after pushing one response, or report an error and return 0 while
 // leaving the stack unchanged so the runtime can stop the program.
 
+// Encode the compiled Call payload and execute eth_call at "latest", using
+// the surrounding operation's required to address. Returns the RPC result
+// string without decoding ABI return values.
+int operation_call(lua_State *co, lua_runtime_ctx *ctx);
+
 // Create a wallet from a secure random private key and return a table with
 // private_key, public_key, and address encoded as lowercase hex strings with
 // a 0x prefix, using a 64-byte public key without the 0x04 marker.

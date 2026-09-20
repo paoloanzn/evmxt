@@ -11,6 +11,8 @@ endif()
 
 
 add_executable(evmxt main.c
+    abi.c
+    lua_abi.c
     rpc.c
     hex.c
     eip_1559_tx.c
@@ -33,3 +35,9 @@ target_link_libraries(evmxt PRIVATE
     cjson
     OpenSSL::Crypto
 )
+
+option(EVMXT_BUILD_TESTS "Build Lua ABI conversion and eth_call tests" OFF)
+if(EVMXT_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

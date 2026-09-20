@@ -8,6 +8,75 @@
 #include "eth_crypto.h"
 #include "hex.h"
 #include "rpc.h"
+#include "lua_abi.h"
+
+int operation_call(lua_State *co, lua_runtime_ctx *ctx)
+{
+    // lua_stack = [operation, index, data]; restore it on every failure.
+    int top = lua_gettop(co);
+    abi_buffer calldata = {0};
+    char error[2048] = "";
+    char *data = NULL, *params = NULL, *response = NULL;
+    const char *failure = NULL;
+
+    if (!ctx || !ctx->rpc_url || !ctx->rpc_url[0]) {
+        failure = "call requires an RPC URL";
+        goto cleanup;
+    }
+    if (top < 3 || !lua_istable(co, top - 2) || !lua_checkstack(co, 2)) {
+        failure = "invalid call operation stack";
+        goto cleanup;
+    }
+    lua_pushliteral(co, "to");
+    lua_rawget(co, top - 2);
+    size_t to_length = 0;
+    const char *to = lua_type(co, -1) == LUA_TSTRING ? lua_tolstring(co, -1, &to_length) : NULL;
+    uint8_t address[20];
+    if (!to || to_length != 42 || to[0] != '0' || to[1] != 'x'
+        || memchr(to, '\0', to_length) || hex_decode(to, address, sizeof(address)) != 20) {
+        failure = "call requires Op.to: 0x followed by 40 hex digits";
+        goto cleanup;
+    }
+    if (!lua_abi_encode_call(co, top, &calldata, error, sizeof(error))) {
+        failure = error;
+        goto cleanup;
+    }
+    if (calldata.len > (SIZE_MAX - 3) / 2) {
+        failure = "calldata is too large to hex-encode";
+        goto cleanup;
+    }
+    data = malloc(calldata.len * 2 + 3);
+    if (!data) {
+        failure = "cannot allocate calldata hex string";
+        goto cleanup;
+    }
+    hex_encode(calldata.data, calldata.len, data);
+
+    // Both strings contain validated hex, so no JSON escaping is needed here.
+    const char *format = "[{\"to\":\"%s\",\"data\":\"%s\"},\"latest\"]";
+    int length = snprintf(NULL, 0, format, to, data);
+    if (length < 0 || !(params = malloc((size_t)length + 1))) {
+        failure = "cannot allocate eth_call parameters";
+        goto cleanup;
+    }
+    snprintf(params, (size_t)length + 1, format, to, data);
+    response = rpc_call(ctx->rpc_url, "eth_call", params);
+    if (!response) failure = "eth_call RPC request failed";
+
+cleanup:
+    free(data);
+    free(params);
+    abi_buffer_free(&calldata);
+    lua_settop(co, top);
+    if (failure) {
+        free(response);
+        printf("(c) error: %s\n", failure);
+        return 0;
+    }
+    lua_pushstring(co, response);
+    free(response);
+    return 1;
+}
 
 // Convert up to eight big-endian bytes into an unsigned 64-bit integer.
 static inline uint64_t bytes_to_uint64(const uint8_t *bytes, size_t len)

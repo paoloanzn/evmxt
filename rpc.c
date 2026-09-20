@@ -1,12 +1,10 @@
-#include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <curl/curl.h>
 #include <cjson/cJSON.h>
 
 #include "rpc.h"
-
-#define BODY_BUF_SIZE 512
 
 struct callback_buf {
     char *data;
@@ -15,66 +13,70 @@ struct callback_buf {
 
 static size_t write_callback(void *ptr, size_t size, size_t nmemb, void *userp)
 {
-    size_t total = size * nmemb;
     struct callback_buf *buf = userp;
+    if (size && nmemb > SIZE_MAX / size) return 0;
+    size_t total = size * nmemb;
+    if (total > SIZE_MAX - buf->len - 1) return 0;
     char *tmp = realloc(buf->data, buf->len + total + 1);
     if (!tmp) return 0;
 
     buf->data = tmp;
-    // Here buf->len is the offset to where we wrote
-    // the last element in buf->data; 1st iteration is 0.
     memcpy(buf->data + buf->len, ptr, total);
     buf->len += total;
     buf->data[buf->len] = '\0';
     return total;
 }
 
-static inline void compose_json_rpc_request(char *buf, size_t len, const char *method, const char *params)
+// Serialize the request dynamically, including arbitrary-length calldata.
+static char *compose_json_rpc_request(const char *method, const char *params)
 {
-    snprintf(buf, len, 
-        "{\"jsonrpc\": \"2.0\", \"method\": \"%s\", \
-        \"params\": %s, \"id\": 1}", method, params);
+    cJSON *request = cJSON_CreateObject();
+    cJSON *arguments = cJSON_Parse(params);
+    char *body = NULL;
+    if (!request || !cJSON_IsArray(arguments)) goto cleanup;
+    if (!cJSON_AddStringToObject(request, "jsonrpc", "2.0")
+        || !cJSON_AddStringToObject(request, "method", method)
+        || !cJSON_AddNumberToObject(request, "id", 1)
+        || !cJSON_AddItemToObject(request, "params", arguments)) goto cleanup;
+    arguments = NULL; // The request now owns the parsed parameters.
+    body = cJSON_PrintUnformatted(request);
+cleanup:
+    cJSON_Delete(arguments);
+    cJSON_Delete(request);
+    return body;
 }
 
-// Sends a JSON-RPC request; return the result string.
-// The caller must free() the returned string.
+// Sends a JSON-RPC request; the caller must free() the returned result string.
 char *rpc_call(const char *url, const char *method, const char *params)
 {
+    if (!url || !method || !params) return NULL;
+    char *body = compose_json_rpc_request(method, params);
+    if (!body) return NULL;
     CURL *curl = curl_easy_init();
-    if (!curl) return NULL;
-
-    char body_buf[BODY_BUF_SIZE];
-    compose_json_rpc_request(body_buf, sizeof(body_buf), method, params);
-
-    struct callback_buf buf = {.data = NULL, .len = 0};
     struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, 
-        "Content-Type: application/json");
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_buf);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-
-    CURLcode return_code = curl_easy_perform(curl);
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
-
-    if (return_code != CURLE_OK || !buf.data) {
-        free(buf.data);
-        return NULL;
-    }
-
-    cJSON *json = cJSON_Parse(buf.data);
-    free(buf.data);
-    if (!json) return NULL;
-
-    cJSON *result = cJSON_GetObjectItem(json, "result");
+    struct callback_buf buf = {0};
+    cJSON *json = NULL;
     char *out = NULL;
-    if (result && cJSON_IsString(result)) { 
-        out = strdup(result->valuestring);
-    }
+    if (!curl) goto cleanup;
+    headers = curl_slist_append(NULL, "Content-Type: application/json");
+    if (!headers) goto cleanup;
+    if (curl_easy_setopt(curl, CURLOPT_URL, url) != CURLE_OK
+        || curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body) != CURLE_OK
+        || curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers) != CURLE_OK
+        || curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf) != CURLE_OK
+        || curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback) != CURLE_OK
+        || curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L) != CURLE_OK) goto cleanup;
 
+    if (curl_easy_perform(curl) != CURLE_OK || !buf.data) goto cleanup;
+    json = cJSON_Parse(buf.data);
+    if (!json || cJSON_GetObjectItemCaseSensitive(json, "error")) goto cleanup;
+    cJSON *result = cJSON_GetObjectItemCaseSensitive(json, "result");
+    if (cJSON_IsString(result)) out = strdup(result->valuestring);
+cleanup:
     cJSON_Delete(json);
+    free(buf.data);
+    curl_slist_free_all(headers);
+    if (curl) curl_easy_cleanup(curl);
+    cJSON_free(body);
     return out;
 }

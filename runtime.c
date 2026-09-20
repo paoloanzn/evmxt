@@ -46,8 +46,8 @@ static int handle_operation(lua_State *co, lua_runtime_ctx *ctx, lua_Integer ind
     NEXT();
 
 op_call:
-    printf("(c) error: call is not implemented\n");
-    return 0;
+    if (!operation_call(co, ctx)) return 0;
+    NEXT();
 op_wallet_create:
     if (!operation_create_wallet(co, ctx)) return 0;
     NEXT();
