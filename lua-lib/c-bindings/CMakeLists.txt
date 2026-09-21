@@ -14,6 +14,15 @@ add_library(bindings MODULE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../selector.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../eth_crypto.c"
 )
+
+# This fixed-point helper is a hot path and benefits substantially from
+# inlining its short Newton iteration and bit-oriented setup.
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(uniswap_v3.c PROPERTIES
+        COMPILE_OPTIONS "-Wall;-Wextra;$<$<NOT:$<CONFIG:Debug>>:-O3>"
+    )
+endif()
+
 target_include_directories(bindings PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 target_link_libraries(bindings PRIVATE
     unofficial::lua::lua

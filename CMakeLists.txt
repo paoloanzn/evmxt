@@ -36,7 +36,7 @@ target_link_libraries(evmxt PRIVATE
     OpenSSL::Crypto
 )
 
-option(EVMXT_BUILD_TESTS "Build Lua ABI conversion and eth_call tests" OFF)
+option(EVMXT_BUILD_TESTS "Build Lua ABI conversion and send_transaction tests" OFF)
 if(EVMXT_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
