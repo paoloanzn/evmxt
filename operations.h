@@ -14,6 +14,11 @@
 // eth_sendRawTransaction, and return the resulting transaction hash.
 int operation_call(lua_State *co, lua_runtime_ctx *ctx);
 
+// Execute a compiled Call against latest state without submitting a transaction.
+// Use the active wallet's address as sender when set, and return raw 0x result
+// data, including 0x for an empty result. No runtime settings are changed.
+int operation_eth_call(lua_State *co, lua_runtime_ctx *ctx);
+
 // Create a wallet from a secure random private key and return a table with
 // private_key, public_key, and address encoded as lowercase hex strings with
 // a 0x prefix, using a 64-byte public key without the 0x04 marker.

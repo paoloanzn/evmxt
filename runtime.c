@@ -16,7 +16,8 @@ typedef enum {
     OP_GET_NONCE = 4,
     OP_SET_GAS = 5,
     OP_GET_BALANCE = 6,
-    OP_COUNT = 7,
+    OP_ETH_CALL = 7,
+    OP_COUNT = 8,
     OP_HALT = OP_COUNT, // Internal instruction; never accepted from Lua.
 } op;
 
@@ -35,6 +36,7 @@ static int handle_operation(lua_State *co, lua_runtime_ctx *ctx, lua_Integer ind
         [OP_GET_NONCE] = &&op_get_nonce,
         [OP_SET_GAS] = &&op_set_gas,
         [OP_GET_BALANCE] = &&op_get_balance,
+        [OP_ETH_CALL] = &&op_eth_call,
         [OP_HALT] = &&op_halt,
     };
     if (index < 0 || index >= OP_COUNT) {
@@ -67,6 +69,9 @@ op_set_gas:
     NEXT();
 op_get_balance:
     if (!operation_get_balance(co, ctx)) return 0;
+    NEXT();
+op_eth_call:
+    if (!operation_eth_call(co, ctx)) return 0;
     NEXT();
 op_halt:
     return 1;

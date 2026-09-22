@@ -12,6 +12,17 @@
     local batch = Call.compile("batch", { "(bool,uint256[])[]" })
     local op = Op.new("call", batch({ { true, { 1, 2 } }, { false, { 3 } } }), token)
     local wallet = Op.new("wallet_create")
+
+    To execute without submitting a transaction, use eth_call:
+    local balanceOf = Call.compile("balanceOf", { "address" })
+    local op = Op.new("eth_call", balanceOf(owner), token)
+    local result = coroutine.yield(op)
+
+    eth_call returns raw 0x result data from latest state, including "0x" when
+    the result is empty. It uses the active wallet's address as sender if set.
+    It does not need a wallet, chain ID, nonce or gas setup, and leaves those
+    settings unchanged. The node supplies the default gas limit for execution.
+    The existing call operation submits a signed transaction and returns its hash.
 ]]--
 
 local M = {}
@@ -29,7 +40,8 @@ local operation = {
     set_wallet = { "set_wallet", "string", 3 },
     get_nonce = { "get_nonce", nil, 4 },
     set_gas = { "set_gas", Gas, 5 },
-    get_balance = { "get_balance", nil, 6 }
+    get_balance = { "get_balance", nil, 6 },
+    eth_call = { "eth_call", Call, 7 }
 }
 
 ---@class Op
@@ -68,7 +80,8 @@ end
 function Op.new(op, data, to)
     assert(isValidOpType(op), "Invalid operation: " .. tostring(op))
     assert(isValidOpData(op, data), "Invalid data for operation: " .. op)
-    assert(to == nil or op == "call", "Only call operations accept a destination")
+    assert(to == nil or op == "call" or op == "eth_call",
+        "Only call operations accept a destination")
     assert(to == nil or (type(to) == "string" and #to == 42
         and to:match("^0x[0-9a-fA-F]+$")), "Invalid destination address")
     return setmetatable({

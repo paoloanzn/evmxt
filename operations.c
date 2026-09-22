@@ -11,6 +11,37 @@
 #include "rpc.h"
 #include "lua_abi.h"
 
+// Both execution paths use the same destination and compiled Call. Keep the
+// stack unchanged, and leave the caller responsible for freeing calldata.
+static int prepare_contract_call(lua_State *co, int operation_index, int data_index,
+                                 uint8_t to[20], abi_buffer *calldata,
+                                 char *error, size_t error_capacity)
+{
+    int top = lua_gettop(co);
+    operation_index = lua_absindex(co, operation_index);
+    data_index = lua_absindex(co, data_index);
+    if (!lua_istable(co, operation_index) || !lua_checkstack(co, 2)) {
+        snprintf(error, error_capacity, "invalid call operation stack");
+        return 0;
+    }
+
+    lua_pushliteral(co, "to");
+    lua_rawget(co, operation_index);
+    size_t length = 0;
+    const char *address = lua_type(co, -1) == LUA_TSTRING
+        ? lua_tolstring(co, -1, &length) : NULL;
+    int ok = 0;
+    if (!address || length != 42 || address[0] != '0' || address[1] != 'x' ||
+        memchr(address, '\0', length) || hex_decode(address, to, 20) != 20) {
+        snprintf(error, error_capacity,
+                 "call requires Op.to: 0x followed by 40 hex digits");
+    } else {
+        ok = lua_abi_encode_call(co, data_index, calldata, error, error_capacity);
+    }
+    lua_settop(co, top);
+    return ok;
+}
+
 int operation_call(lua_State *co, lua_runtime_ctx *ctx)
 {
     // lua_stack = [operation, index, data]; restore it on every failure.
@@ -41,21 +72,12 @@ int operation_call(lua_State *co, lua_runtime_ctx *ctx)
         failure = "call requires gas settings";
         goto cleanup;
     }
-    if (top < 3 || !lua_istable(co, top - 2) || !lua_checkstack(co, 2)) {
+    if (top < 3) {
         failure = "invalid call operation stack";
         goto cleanup;
     }
-    lua_pushliteral(co, "to");
-    lua_rawget(co, top - 2);
-    size_t to_length = 0;
-    const char *to_hex = lua_type(co, -1) == LUA_TSTRING ? lua_tolstring(co, -1, &to_length) : NULL;
     uint8_t to[20];
-    if (!to_hex || to_length != 42 || to_hex[0] != '0' || to_hex[1] != 'x'
-        || memchr(to_hex, '\0', to_length) || hex_decode(to_hex, to, sizeof(to)) != 20) {
-        failure = "call requires Op.to: 0x followed by 40 hex digits";
-        goto cleanup;
-    }
-    if (!lua_abi_encode_call(co, top, &calldata, error, sizeof(error))) {
+    if (!prepare_contract_call(co, top - 2, top, to, &calldata, error, sizeof(error))) {
         failure = error;
         goto cleanup;
     }
@@ -130,6 +152,84 @@ int operation_call(lua_State *co, lua_runtime_ctx *ctx)
 cleanup:
     free(raw);
     free(raw_hex);
+    free(params);
+    abi_buffer_free(&calldata);
+    lua_settop(co, top);
+    if (failure) {
+        free(response);
+        printf("(c) error: %s\n", failure);
+        return 0;
+    }
+    lua_pushstring(co, response);
+    free(response);
+    return 1;
+}
+
+int operation_eth_call(lua_State *co, lua_runtime_ctx *ctx)
+{
+    // Simulate against latest state and return the contract's raw result bytes.
+    int top = lua_gettop(co);
+    abi_buffer calldata = {0};
+    char error[2048] = "";
+    char *data_hex = NULL, *params = NULL, *response = NULL;
+    const char *failure = NULL;
+
+    if (!ctx || !ctx->rpc_url || !ctx->rpc_url[0]) {
+        failure = "eth_call requires an RPC URL";
+        goto cleanup;
+    }
+    if (top < 3) {
+        failure = "invalid call operation stack";
+        goto cleanup;
+    }
+    uint8_t to[20];
+    if (!prepare_contract_call(co, top - 2, top, to, &calldata, error, sizeof(error))) {
+        failure = error;
+        goto cleanup;
+    }
+    if (calldata.len > (SIZE_MAX - 3) / 2) {
+        failure = "call data is too large to hex-encode";
+        goto cleanup;
+    }
+    data_hex = malloc(calldata.len * 2 + 3);
+    if (!data_hex) {
+        failure = "cannot allocate call data hex string";
+        goto cleanup;
+    }
+    hex_encode(calldata.data, calldata.len, data_hex);
+    char address[43], sender[43];
+    hex_encode(to, sizeof(to), address);
+
+    // A wallet supplies msg.sender when available, but no signing is needed.
+    // Leave gas settings out so the node chooses its simulation defaults.
+    char from[64] = "";
+    if (ctx->wallet_set) {
+        hex_encode(ctx->address, sizeof(ctx->address), sender);
+        snprintf(from, sizeof(from), ",\"from\":\"%s\"", sender);
+    }
+    const char *format = "[{\"to\":\"%s\",\"data\":\"%s\"%s},\"latest\"]";
+    int length = snprintf(NULL, 0, format, address, data_hex, from);
+    if (length < 0 || !(params = malloc((size_t)length + 1))) {
+        failure = "cannot allocate eth_call parameters";
+        goto cleanup;
+    }
+    snprintf(params, (size_t)length + 1, format, address, data_hex, from);
+    response = rpc_call(ctx->rpc_url, "eth_call", params);
+    if (!response) {
+        failure = "eth_call RPC request failed";
+        goto cleanup;
+    }
+
+    // Results are byte strings, so empty data is valid but odd hex lengths are not.
+    size_t result_length = strlen(response);
+    if (result_length < 2 || response[0] != '0' || response[1] != 'x' ||
+        result_length % 2 || strspn(response + 2, "0123456789abcdefABCDEF") != result_length - 2) {
+        failure = "eth_call returned invalid result data";
+        goto cleanup;
+    }
+
+cleanup:
+    free(data_hex);
     free(params);
     abi_buffer_free(&calldata);
     lua_settop(co, top);
