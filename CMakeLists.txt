@@ -10,17 +10,18 @@ if(EVMXT_BUILD_C_BINDINGS_ONLY)
 endif()
 
 
-add_executable(evmxt main.c
-    abi.c
-    lua_abi.c
-    rpc.c
-    hex.c
-    eip_1559_tx.c
-    rlp.c
-    eth_crypto.c
-    selector.c
-    runtime.c
-    operations.c)
+add_executable(evmxt kernel/main.c
+    kernel/abi.c
+    kernel/lua_abi.c
+    kernel/rpc.c
+    kernel/hex.c
+    kernel/eip_1559_tx.c
+    kernel/rlp.c
+    kernel/eth_crypto.c
+    kernel/selector.c
+    kernel/runtime.c
+    kernel/operations.c)
+target_include_directories(evmxt PRIVATE kernel)
 
 find_package(unofficial-lua CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)

@@ -11,8 +11,8 @@ find_package(OpenSSL 3.2 REQUIRED)
 file(GLOB BINDING_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 add_library(bindings MODULE
     ${BINDING_SOURCES}
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../selector.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../eth_crypto.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../kernel/selector.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../kernel/eth_crypto.c"
 )
 
 # This fixed-point helper is a hot path and benefits substantially from
@@ -23,7 +23,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     )
 endif()
 
-target_include_directories(bindings PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+target_include_directories(bindings PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../kernel")
 target_link_libraries(bindings PRIVATE
     unofficial::lua::lua
     libsecp256k1::secp256k1
