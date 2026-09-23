@@ -2,7 +2,7 @@
     The Cli object defines an interactive and generic commands
     terminal interface. A Command object gives one of those commands
     a name, such as /greet, and says which function to run
-    and what arguments to give it. Add a Command object to the Cli
+    and optionally binds arguments to it. Add a Command object to the Cli
     so it knows about it. The Cli also has live incremental auto-suggestions.
     It keeps reading input until the user exits or a command returns false.
 
@@ -12,9 +12,14 @@
     local Cli, Command = cli.Cli, cli.Command
     local greet = Command.compile("/greet", function(name)
         print("Hello, " .. name)
-    end, "world")
+    end)
     Cli.add(greet)
     Cli.start()
+
+    Enter /greet world to pass "world" to the compiled command.
+    Input arguments are whitespace-separated strings; callbacks perform any
+    type conversion. Optional compile-time arguments precede input arguments.
+    Cli.execute("/greet world") also dispatches a line without starting a terminal.
 ]]--
 
 local COMMAND_PREFIX = "/"
@@ -41,8 +46,12 @@ function Command.compile(name, func, ...)
     }, Command)
 end
 
-function Command:execute()
-    return self.func(table.unpack(self.args, 1, self.arg_count))
+function Command:execute(...)
+    local args = {}
+    for i = 1, self.arg_count do args[i] = self.args[i] end
+    local count = select("#", ...)
+    for i = 1, count do args[self.arg_count + i] = select(i, ...) end
+    return self.func(table.unpack(args, 1, self.arg_count + count))
 end
 
 local function not_implemented()
@@ -71,13 +80,19 @@ Cli.add(Command.compile("/end", quit))
 Cli.add(Command.compile("/exit", quit))
 Cli.add(Command.compile("/q", quit))
 
-local function execute_command(command)
+---@param input string
+function Cli.execute(input)
+    assert(type(input) == "string", "Command input must be a string")
+    local command, rest = input:match("^%s*(/[^%s]+)(.*)$")
+    if not command then return end
     local entry = commands[command]
     if entry == nil then
         print("Unknown command: " .. command)
         return
     end
-    return entry:execute()
+    local args = {}
+    for arg in rest:gmatch("%S+") do args[#args + 1] = arg end
+    return entry:execute(table.unpack(args, 1, #args))
 end
 
 local function matches_for(prefix)
@@ -163,9 +178,7 @@ end
 local function read_input(reader)
     local input = reader()
     if input == nil then return false end
-    if string.sub(input, 1, 1) == COMMAND_PREFIX then
-        if execute_command(input) == false then return false end
-    end
+    if Cli.execute(input) == false then return false end
     return true
 end
 
